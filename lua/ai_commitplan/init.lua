@@ -396,8 +396,99 @@ local function largest_loaded_model(response_models)
 end
 
 local function select_model(config, callback)
-  if config.model then
+  if non_empty_string(config.model) then
     callback(config.model)
+    return
+  end
+
+  local function choose(models)
+    if #models == 0 then
+      callback(nil, "No models available; configure model or models explicitly")
+      return
+    end
+    vim.ui.select(models, { prompt = "Choose commit model (provider billing may apply)" }, function(model)
+      callback(model, not model and "Model selection cancelled" or nil)
+    end)
+  end
+  if config.models then
+    choose(vim.deepcopy(config.models))
+    return
+  end
+  if config.provider == "ollama" then
+    local native = vim.tbl_extend("force", config, { endpoint = config.endpoint:gsub("/v1/?$", "") })
+    request(native, "/api/ps", nil, function(response, err)
+      if not response then
+        callback(nil, err)
+        return
+      end
+      local loaded = {}
+      for _, entry in ipairs(type(response.models) == "table" and response.models or {}) do
+        local id = type(entry) == "table" and (non_empty_string(entry.name) or non_empty_string(entry.model)) or nil
+        if id and not id:match("cloud") then
+          table.insert(loaded, { id = id, size = tonumber(entry.size) or 0 })
+        end
+      end
+      table.sort(loaded, function(a, b)
+        if a.size == b.size then
+          return a.id < b.id
+        end
+        return a.size > b.size
+      end)
+      -- Only auto-select a loaded model confirmed to support text completion.
+      local function next_model(index)
+        if not loaded[index] then
+          request(config, "/models", nil, function(models_response, list_error)
+            if not models_response then
+              callback(nil, list_error)
+              return
+            end
+            local ids = {}
+            for _, entry in ipairs(type(models_response.data) == "table" and models_response.data or {}) do
+              if type(entry) == "table" and non_empty_string(entry.id) then
+                table.insert(ids, entry.id)
+              end
+            end
+            table.sort(ids)
+            choose(ids)
+          end)
+          return
+        end
+        request(native, "/api/show", { model = loaded[index].id }, function(details)
+          if
+            details
+            and not details.remote_host
+            and not details.remote_model
+            and type(details.capabilities) == "table"
+            and vim.tbl_contains(details.capabilities, "completion")
+          then
+            vim.notify("Using largest loaded Ollama completion model: " .. loaded[index].id)
+            callback(loaded[index].id)
+          else
+            next_model(index + 1)
+          end
+        end)
+      end
+      next_model(1)
+    end)
+    return
+  end
+  if config.provider == "openai_compatible" or config.provider == "anthropic" then
+    request(config, "/models", nil, function(response, err)
+      if not response then
+        callback(nil, err or "Model discovery failed; configure models explicitly")
+        return
+      end
+      local models, seen = {}, {}
+      for _, entry in ipairs(type(response.data) == "table" and response.data or {}) do
+        local id = type(entry) == "table" and non_empty_string(entry.id) or nil
+        if id and not seen[id] then
+          seen[id] = true
+          table.insert(models, id)
+        end
+      end
+      table.sort(models)
+      choose(models)
+    end)
     return
   end
 
@@ -1129,14 +1220,9 @@ function M.create()
     vim.notify("The diff is large; oMLX receives the first 50 KB plus the complete file list", vim.log.levels.WARN)
   end
 
-  if
-    config.endpoint == ""
-    or (
-      (config.provider == "openai_compatible" or config.provider == "anthropic") and not non_empty_string(config.model)
-    )
-  then
+  if config.endpoint == "" then
     session_active = false
-    vim.notify("Configure a model and, for HTTP providers, an endpoint", vim.log.levels.ERROR)
+    vim.notify("Configure an HTTP provider endpoint", vim.log.levels.ERROR)
     return
   end
   local activity = show_activity(snapshot)
@@ -1166,6 +1252,7 @@ if vim.env.NVIM_AI_COMMIT_TEST == "1" then
     stage_unit = stage_unit,
     execute_plan = execute_plan,
     connection_config = connection_config,
+    select_model = select_model,
     merge_messages = merge_messages,
     stream_request = stream_request,
   }

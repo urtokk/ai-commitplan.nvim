@@ -11,9 +11,15 @@ Example: >lua
     api_key_env = "ANTHROPIC_API_KEY",
   })
 <
-Providers: "anthropic", "openai_compatible", "omlx" (default).
+Providers: "anthropic", "openai_compatible", "ollama", "omlx" (default).
 HTTP endpoints include /v1 where required. Anthropic uses /messages;
 OpenAI-compatible providers use /chat/completions.
+model fixes a model. models = { "id-a", "id-b" } offers an explicit picker.
+Without either option, cloud providers list /models and wait for a choice.
+oMLX and Ollama automatically select the largest suitable loaded local model.
+Ollama checks completion capability; without a suitable loaded model it offers
+the installed-model picker. Use provider = "ollama" for this behavior.
+Other local OpenAI-compatible servers use the same picker rules as cloud APIs.
 api_key accepts a string or function; api_key_env takes precedence.
 connect_timeout defaults to 5 seconds; idle_timeout defaults to 120 seconds.
 

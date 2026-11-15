@@ -1,7 +1,8 @@
 # Release Preparation
 
-This repository has no remote or release automation. Preparing it does not
-publish it. Publishing, pushing and tagging require a separate maintainer action.
+The private remote is `https://github.com/urtokk/ai-commitplan.nvim`. No code has
+been pushed and no tag or release created during preparation. Publishing,
+pushing and tagging require a separate maintainer action.
 
 ## Completed Locally
 
@@ -13,6 +14,7 @@ publish it. Publishing, pushing and tagging require a separate maintainer action
 - CI matrix for Neovim 0.11.0, 0.11.5, 0.12.0 and 0.12.6 on Linux and macOS.
   This is a configured matrix, not evidence of successful hosted CI runs.
 - Local installation instructions, support boundaries and data-handling notes.
+- Complete local act workflow on native Linux ARM64 with Neovim 0.12.6.
 
 ## Local Test Evidence
 
@@ -21,11 +23,14 @@ tests and curl-based Anthropic/OpenAI transport fixtures passed on macOS arm64
 with Neovim 0.11.0, 0.11.5, 0.12.0 and 0.12.6. The 0.11 tests exposed a binary
 string hashing incompatibility; the fingerprint now base64-encodes its input.
 This does not establish Linux compatibility or replace real provider/UI checks.
+The complete act workflow subsequently passed on native Linux ARM64 with Neovim
+0.12.6. Hosted AMD64 and macOS GitHub runners have not been exercised.
 
 ## Before the First Public Preview
 
 - Select a license and add its complete text with the correct copyright holder.
-- Run `mise run check` and the GitHub matrix after a remote is explicitly approved.
+- Run `mise run check` and a container smoke test, then the GitHub matrix after
+  the first private push is explicitly approved.
 - Exercise a real OpenAI-compatible and a real Anthropic-compatible endpoint.
   Record provider/model/version, without credentials or confidential diffs.
 - Review the UI interactively on the minimum Neovim version, including cancelling

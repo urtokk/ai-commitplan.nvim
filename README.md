@@ -8,6 +8,7 @@ and regenerate messages while keeping reviewed groups fixed.
 Targets Neovim >= 0.11, Git, curl and a configured AI endpoint.
 The CI matrix covers 0.11.0, 0.11.5, 0.12.0 and 0.12.6 on Linux and macOS.
 This repository is being prepared locally and has not been published.
+An empty private GitHub repository has been reserved; no code has been pushed.
 
 ## Local Installation
 
@@ -31,11 +32,59 @@ Example for lazy.nvim; replace the directory with this checkout:
 
 `provider = "openai_compatible"` uses streamed Chat Completions and an endpoint
 including `/v1`. `provider = "anthropic"` uses non-streaming Messages with
-`x-api-key` and `anthropic-version: 2023-06-01`. Both need a model.
+`x-api-key` and `anthropic-version: 2023-06-01`.
 `setup({})` discovers local oMLX settings and a loaded model.
 `api_key` accepts a string or function; `api_key_env` overrides it.
 `connect_timeout` defaults to 5 seconds and `idle_timeout` to 120 seconds.
 Run `:checkhealth ai_commitplan` to inspect local prerequisites.
+
+## Model Selection
+
+- `model = "model-id"` fixes the model and skips the picker.
+- `models = { "small-model", "larger-model" }` opens a picker for each new plan.
+  This is the recommended way to restrict cloud choices to supported chat models
+  and your preferred cost range. No request generates a plan until you choose.
+- Without either option, Anthropic/OpenAI-compatible providers request `/models`
+  and show the returned IDs for explicit selection. If discovery is unsupported,
+  configure `models`. Discovery currently uses the first response page and does
+  not infer prices, capabilities or a "best" model.
+- oMLX defaults to the largest already-loaded local language model when no
+  configured model is present. Ollama uses the largest loaded local model with
+  confirmed completion capability, skipping embedding and identified remote
+  models. Neither backend loads a different model for discovery.
+  Other OpenAI-compatible servers use the same picker rules as cloud APIs.
+
+Example with a curated cloud model list (replace IDs with your provider's IDs):
+
+```lua
+require("ai_commitplan").setup({
+  provider = "anthropic",
+  models = { "your-small-model", "your-larger-model" },
+  api_key_env = "ANTHROPIC_API_KEY",
+})
+```
+
+Cancel the picker to stop generation. Message regeneration keeps the model chosen
+for that plan. Listing model IDs is not a pricing estimate; provider billing
+still applies to generation.
+
+### Local Ollama
+
+```lua
+require("ai_commitplan").setup({
+  provider = "ollama",
+  -- endpoint = "http://127.0.0.1:11434/v1", -- default
+  -- model = "your-installed-model", -- optional fixed choice
+})
+```
+
+Start Ollama independently. The plugin uses `/api/ps` and `/api/show` for loaded
+model discovery, and `/v1/chat/completions` for generation. Size means reported
+model bytes, not a quality score. If no suitable model is loaded, the
+installed-model picker appears. Selecting an unloaded model can cause Ollama to
+load it during generation. No model is downloaded automatically.
+Use `models = { ... }` for a curated picker instead of auto-selection.
+Ollama cloud endpoints should use `openai_compatible` with explicit model choices.
 
 ## Workflow
 
@@ -68,7 +117,7 @@ concurrent Git changes during execution. Review all proposed messages and groups
 ## Validation and Release Preparation
 
 Run `mise install` and `mise run check` for all lint and test checks.
-The Git tests can also run independently with `zsh tests/ai-commit.zsh`.
+The Git tests can also run independently with `bash tests/run.sh`.
 Tests use temporary repositories and mocked model responses; they do not call a
 paid API. A real Claude-compatible endpoint has not yet been tested.
 The local HTTP transport fixture runs with
@@ -81,4 +130,5 @@ Hook rejection, signing failures and failures after an earlier successful commit
 are covered with real Git processes. See [release preparation](RELEASING.md)
 for remaining manual checks, [contributing](CONTRIBUTING.md) for development,
 [changelog](CHANGELOG.md) for changes and `:help ai-commitplan` for editor help.
+The contributing guide includes local GitHub Actions testing with `act`.
 No license grant has been selected yet; publishing remains a separate decision.

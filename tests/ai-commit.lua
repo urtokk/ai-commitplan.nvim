@@ -17,6 +17,98 @@ local connection = helpers.connection_config()
 assert(connection.endpoint == "http://localhost:1234/v1" and connection.model == "test")
 assert(connection.api_key == "test-key" and connection.idle_timeout == 120)
 planner.setup({})
+assert(not pcall(planner.setup, { model = "" }))
+assert(not pcall(planner.setup, { models = {} }))
+local saved_picker, saved_system = vim.ui.select, vim.system
+local selected, selection_error, pending_choice, choices
+vim.ui.select = function(items, _, callback)
+  choices, pending_choice = items, callback
+end
+local function selected_model(model, err)
+  selected, selection_error = model, err
+end
+helpers.select_model({ provider = "anthropic", models = { "small", "large" } }, selected_model)
+assert(not selected and choices[1] == "small", "cloud model was chosen without user input")
+pending_choice("small")
+assert(selected == "small")
+selected = nil
+helpers.select_model({ provider = "openai_compatible", models = { "small", "large" } }, selected_model)
+pending_choice(nil)
+assert(not selected and selection_error, "cancelled model selection was ignored")
+vim.system = function(command, _, callback)
+  assert(command[#command] == "http://localhost/v1/models", "cloud provider used local size discovery")
+  callback({ code = 0, stdout = '{"data":[{"id":"large"},{"id":"small"}]}' })
+end
+pending_choice = nil
+helpers.select_model(
+  { provider = "anthropic", endpoint = "http://localhost/v1", connect_timeout = 5, idle_timeout = 120 },
+  selected_model
+)
+assert(vim.wait(1000, function()
+  return pending_choice ~= nil
+end))
+assert(not selected)
+pending_choice("small")
+assert(selected == "small")
+vim.system = function(command, _, callback)
+  assert(command[#command] == "http://localhost/v1/models/status")
+  callback({
+    code = 0,
+    stdout = '{"models":[{"id":"local-8B","status":"loaded"},{"id":"local-32B","status":"loaded"}]}',
+  })
+end
+selected = nil
+helpers.select_model({ endpoint = "http://localhost/v1", connect_timeout = 5, idle_timeout = 120 }, selected_model)
+assert(vim.wait(1000, function()
+  return selected ~= nil
+end))
+assert(selected == "local-32B")
+planner.setup({ provider = "ollama" })
+assert(helpers.connection_config().endpoint == "http://127.0.0.1:11434/v1")
+planner.setup({})
+local ollama_config =
+  { provider = "ollama", endpoint = "http://localhost:11434/v1", connect_timeout = 5, idle_timeout = 120 }
+local show_calls = 0
+vim.system = function(command, opts, callback)
+  local url = command[#command]
+  local response
+  if url == "http://localhost:11434/api/ps" then
+    response = {
+      models = {
+        { name = "embedding", size = 900 },
+        { name = "chat-small", size = 100 },
+        { name = "chat-large", size = 500 },
+      },
+    }
+  elseif url == "http://localhost:11434/api/show" then
+    show_calls = show_calls + 1
+    local model = vim.json.decode(opts.stdin).model
+    response = { capabilities = { model == "embedding" and "embedding" or "completion" } }
+  else
+    error("unexpected Ollama discovery URL: " .. url)
+  end
+  callback({ code = 0, stdout = vim.json.encode(response) })
+end
+selected = nil
+helpers.select_model(ollama_config, selected_model)
+assert(vim.wait(1000, function()
+  return selected ~= nil
+end))
+assert(selected == "chat-large" and show_calls == 2, "Ollama did not select largest loaded completion model")
+vim.system = function(command, _, callback)
+  local response = command[#command]:match("/api/ps$") and { models = {} }
+    or { data = { { id = "installed-small" }, { id = "installed-large" } } }
+  callback({ code = 0, stdout = vim.json.encode(response) })
+end
+selected, pending_choice = nil, nil
+helpers.select_model(ollama_config, selected_model)
+assert(vim.wait(1000, function()
+  return pending_choice ~= nil
+end))
+assert(not selected, "Ollama loaded an installed model without a choice")
+pending_choice("installed-small")
+assert(selected == "installed-small")
+vim.ui.select, vim.system = saved_picker, saved_system
 assert(not pcall(planner.setup, { provider = "aichat" }))
 assert(not pcall(planner.setup, { idle_timeout = -1 }))
 planner.setup({ provider = "anthropic", model = "test", api_key = "bad\nheader" })
