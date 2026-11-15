@@ -51,5 +51,5 @@ reproduction in bug reports. Do not include private diffs or credentials.
 Use Conventional Commit messages. Describe behavior and validation in pull
 requests. Do not disable commit hooks, signing or plan validation as a workaround.
 
-License selection is pending; do not solicit third-party contributions or
-publish this repository until the maintainer has selected a license.
+The project uses the [MIT license](LICENSE). Contributions are provided under
+the same license. Public publication remains a separate maintainer decision.
