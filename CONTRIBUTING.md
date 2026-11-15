@@ -52,4 +52,4 @@ Use Conventional Commit messages. Describe behavior and validation in pull
 requests. Do not disable commit hooks, signing or plan validation as a workaround.
 
 The project uses the [MIT license](LICENSE). Contributions are provided under
-the same license. Public publication remains a separate maintainer decision.
+the same license. Stable releases and version tags remain maintainer decisions.

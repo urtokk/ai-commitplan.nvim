@@ -1,9 +1,8 @@
 # Release Preparation
 
-The private remote is `https://github.com/urtokk/ai-commitplan.nvim`. The verified
-source has been pushed with maintainer approval. No tag, public visibility change
-or release has been created. Public publication and tagging remain separate
-maintainer decisions.
+The repository is `https://github.com/urtokk/ai-commitplan.nvim`, published as a
+development preview with maintainer approval. No version tag or stable release
+has been created. Stable releases and tagging remain separate decisions.
 
 ## Completed Locally
 
@@ -30,7 +29,7 @@ all eight Ubuntu/macOS matrix jobs. The local_config consumer also tests actual
 Lazy loading, command/keymap registration and option application in an isolated
 Neovim session without AI requests.
 
-## Before the First Public Preview
+## Release Readiness
 
 ### Completed Publication Checks
 
@@ -41,7 +40,7 @@ confirmed in the maintainer's existing public repositories. MIT was selected
 and the complete license text added. Re-scan after subsequent changes; this
 static check cannot guarantee that every possible secret has been detected.
 
-### Remaining Checks
+### Before a Stable Release
 
 - MIT license selected; the complete text names Torben Diegel as copyright holder.
 - Keep `mise run check`, the container smoke test and hosted CI matrix green.
@@ -50,9 +49,8 @@ static check cannot guarantee that every possible secret has been detected.
 - Review the UI interactively on the minimum Neovim version, including cancelling
   dialogs, invalid edits, moving the last unit and editing multiline bodies.
 - Re-check new history and documentation for private information before publishing.
-- Replace local installation paths with the approved repository URL.
-- Review any outstanding limitations, then create an explicitly approved preview
-  tag. Do not advertise a stable release before the manual checks pass.
+- Review outstanding limitations before creating an approved version tag.
+  Do not advertise a stable release before the manual checks pass.
 
 ## Known Boundaries
 

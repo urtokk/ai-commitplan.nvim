@@ -7,10 +7,28 @@ and regenerate messages while keeping reviewed groups fixed.
 
 Targets Neovim >= 0.11, Git, curl and a configured AI endpoint.
 The CI matrix covers 0.11.0, 0.11.5, 0.12.0 and 0.12.6 on Linux and macOS.
-This is a private development preview, not a public release. The source is
-available to authorized users at `urtokk/ai-commitplan.nvim`.
+This is a public development preview, not a stable release. Review generated
+messages and groups before committing. Real-provider and interactive UI checks
+are still incomplete; see [release preparation](RELEASING.md).
 
-## Local Installation
+## Installation
+
+Install directly from GitHub with lazy.nvim:
+
+```lua
+{
+  "urtokk/ai-commitplan.nvim",
+  main = "ai_commitplan",
+  cmd = "AICommit",
+  keys = { { "<leader>gA", "<cmd>AICommit<cr>", desc = "AI commit plan" } },
+  opts = { provider = "omlx" },
+}
+```
+
+Choose another provider through `opts` as described below. No GitHub login is
+required to install the public repository.
+
+### Local Development
 
 Example for lazy.nvim; replace the directory with this checkout:
 
@@ -30,22 +48,10 @@ Example for lazy.nvim; replace the directory with this checkout:
 }
 ```
 
-Without a local checkout, authorized users can install through lazy.nvim:
+Restart Neovim to pick up checkout changes. The plugin does not configure Git
+authentication.
 
-```lua
-{
-  "urtokk/ai-commitplan.nvim",
-  main = "ai_commitplan",
-  cmd = "AICommit",
-  keys = { { "<leader>gA", "<cmd>AICommit<cr>", desc = "AI commit plan" } },
-  opts = { provider = "omlx" },
-}
-```
-
-Private installation requires authenticated Git access (an SSH setup or a
-credential helper such as `gh auth setup-git`). This plugin does not configure
-Git authentication. For local development, use the `dir` specification above
-and restart Neovim to pick up checkout changes.
+### Provider Configuration
 
 `provider = "openai_compatible"` uses streamed Chat Completions and an endpoint
 including `/v1`. `provider = "anthropic"` uses non-streaming Messages with
@@ -151,5 +157,4 @@ The contributing guide includes local GitHub Actions testing with `act`.
 
 ## License
 
-[MIT](LICENSE), copyright 2026 Torben Diegel. Public publication remains a
-separate maintainer decision.
+[MIT](LICENSE), copyright 2026 Torben Diegel.
