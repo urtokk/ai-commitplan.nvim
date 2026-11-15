@@ -31,3 +31,11 @@ NVIM_AI_COMMIT_TEST=1 \
   XDG_STATE_HOME="$test_dir/state" \
   XDG_DATA_HOME="$test_dir/data" \
   command nvim -u NONE -i NONE --headless -l "$repo_root/tests/ai-commit.lua"
+
+NVIM_AI_COMMIT_TEST=1 \
+  LOCAL_CONFIG_TEST_ROOT="$repo_root" \
+  AI_COMMIT_TEST_REPO="$work_dir" \
+  HOME="$test_dir/home" \
+  XDG_STATE_HOME="$test_dir/state" \
+  XDG_DATA_HOME="$test_dir/data" \
+  command nvim -u NONE -i NONE --headless -l "$repo_root/tests/execution.lua"

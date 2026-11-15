@@ -1,0 +1,50 @@
+*ai-commitplan.txt*  Review and create AI-assisted atomic Git commits
+
+SETUP                                                   *ai-commitplan-setup*
+
+Targets Neovim 0.11+, Git and curl. See the tested versions in RELEASING.md.
+Example: >lua
+  require("ai_commitplan").setup({
+    provider = "anthropic",
+    endpoint = "https://api.anthropic.com/v1",
+    model = "your-provider-model",
+    api_key_env = "ANTHROPIC_API_KEY",
+  })
+<
+Providers: "anthropic", "openai_compatible", "omlx" (default).
+HTTP endpoints include /v1 where required. Anthropic uses /messages;
+OpenAI-compatible providers use /chat/completions.
+api_key accepts a string or function; api_key_env takes precedence.
+connect_timeout defaults to 5 seconds; idle_timeout defaults to 120 seconds.
+
+COMMANDS                                                *ai-commitplan-commands*
+
+:AICommit               Generate and review a commit plan.
+:checkhealth ai_commitplan
+                        Inspect local prerequisites.
+:AICommitConfirm        In a plan buffer: save JSON edits or confirm commits.
+:AICommitDiscard        In a plan buffer: discard pending JSON edits.
+
+PLAN KEYS                                               *ai-commitplan-keys*
+
+m                       Edit a selected commit's message field.
+M                       Move a selected hunk/file to an existing or new commit.
+r                       Regenerate messages for fixed groups.
+e                       Edit the plan as JSON.
+CTRL-S                  Save edits and return to review; confirm from review.
+q                       Discard edits or close the plan.
+<Tab>                   Switch between plan and hunk preview.
+
+DATA AND EXECUTION                                      *ai-commitplan-safety*
+
+Diffs and file context are sent to the configured provider. Review repository
+confidentiality before using a remote endpoint. Messages are proposals, not
+proof of behavior. Original Git hunks are the smallest movable text units.
+
+HEAD, index and working-tree changes invalidate a previously generated plan.
+Merge/rebase/cherry-pick operations must finish before planning. Commit hooks
+and signing stay enabled. Execution changes staging. Failed sequences are not
+rolled back: earlier commits remain and failed staged changes need inspection.
+Avoid concurrent Git writes. See README.md and RELEASING.md for limitations.
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -25,14 +25,21 @@ assert(server:listen(8, function(err)
       return
     end
     handled = true
-    assert(headers:find("POST /v1/messages HTTP/1.1", 1, true))
-    assert(headers:find("x-api-key: fixture-secret", 1, true))
-    assert(headers:find("anthropic-version: 2023-06-01", 1, true))
     local body = vim.json.decode(received:sub(header_end + 4))
-    assert(body.system == "system" and body.messages[1].content == "diff")
+    local response
+    if headers:find("POST /v1/messages HTTP/1.1", 1, true) then
+      assert(headers:find("x-api-key: fixture-secret", 1, true))
+      assert(headers:find("anthropic-version: 2023-06-01", 1, true))
+      assert(body.system == "system" and body.messages[1].content == "diff")
+      response = vim.json.encode({ stop_reason = "end_turn", content = { { type = "text", text = "fixture reply" } } })
+    else
+      assert(headers:find("POST /v1/chat/completions HTTP/1.1", 1, true))
+      assert(headers:find("Authorization: Bearer fixture-secret", 1, true))
+      assert(body.messages[1].content == "system" and body.messages[2].content == "diff" and body.stream)
+      response =
+        'data: {"choices":[{"delta":{"content":"fixture reply"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+    end
     requests = requests + 1
-    local response =
-      vim.json.encode({ stop_reason = "end_turn", content = { { type = "text", text = "fixture reply" } } })
     client:write(
       "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
         .. #response
@@ -45,33 +52,35 @@ assert(server:listen(8, function(err)
     )
   end)
 end))
-local done, result, failure
-helpers.stream_request(
-  {
-    provider = "anthropic",
-    endpoint = "http://127.0.0.1:" .. address.port .. "/v1",
-    api_key = "fixture-secret",
-    connect_timeout = 5,
-    idle_timeout = 5,
-  },
-  "/chat/completions",
-  {
-    model = "fixture",
-    max_tokens = 100,
-    messages = { { content = "system" }, { role = "user", content = "diff" } },
-  },
-  function() end,
-  function(content, err)
-    result, failure, done = content, err, true
-  end
-)
-assert(
-  vim.wait(10000, function()
-    return done
-  end),
-  "request timed out"
-)
+for _, protocol in ipairs({ "anthropic", "openai_compatible" }) do
+  local done, result, failure
+  helpers.stream_request(
+    {
+      provider = protocol,
+      endpoint = "http://127.0.0.1:" .. address.port .. "/v1",
+      api_key = "fixture-secret",
+      connect_timeout = 5,
+      idle_timeout = 5,
+    },
+    "/chat/completions",
+    {
+      model = "fixture",
+      max_tokens = 100,
+      messages = { { content = "system" }, { role = "user", content = "diff" } },
+    },
+    function() end,
+    function(content, err)
+      result, failure, done = content, err, true
+    end
+  )
+  assert(
+    vim.wait(10000, function()
+      return done
+    end),
+    "request timed out"
+  )
+  assert(result == "fixture reply", tostring(failure))
+end
 server:close()
-assert(result == "fixture reply", tostring(failure))
-assert(requests == 1)
-print("PASS: real curl -> local Anthropic HTTP fixture, auth and JSON body")
+assert(requests == 2)
+print("PASS: real curl -> Anthropic and OpenAI HTTP fixtures, auth, JSON and SSE")

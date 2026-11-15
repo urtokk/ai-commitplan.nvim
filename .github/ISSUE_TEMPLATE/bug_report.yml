@@ -1,0 +1,17 @@
+name: Bug report
+description: Report a reproducible failure
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Neovim version, plugin commit and provider protocol. Do not include credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Minimal configuration, steps, expected and actual behavior. Use synthetic diffs rather than private code.
+    validations:
+      required: true

@@ -5,10 +5,9 @@ and regenerate messages while keeping reviewed groups fixed.
 
 ## Requirements
 
-Neovim >= 0.11, Git, curl and a configured AI endpoint. No aichat dependency.
-This is a preparation snapshot extracted from local_config, not a published
-release. The dotfiles currently retain their own copy; changes must be synced
-until extraction and consumer migration are completed.
+Targets Neovim >= 0.11, Git, curl and a configured AI endpoint.
+The CI matrix covers 0.11.0, 0.11.5, 0.12.0 and 0.12.6 on Linux and macOS.
+This repository is being prepared locally and has not been published.
 
 ## Local Installation
 
@@ -68,14 +67,18 @@ concurrent Git changes during execution. Review all proposed messages and groups
 
 ## Validation and Release Preparation
 
-Run `zsh tests/ai-commit.zsh` and `stylua --check lua plugin tests/ai-commit.lua`.
+Run `mise install` and `mise run check` for all lint and test checks.
+The Git tests can also run independently with `zsh tests/ai-commit.zsh`.
 Tests use temporary repositories and mocked model responses; they do not call a
 paid API. A real Claude-compatible endpoint has not yet been tested.
 The local HTTP transport fixture runs with
 `NVIM_AI_COMMIT_TEST=1 nvim --headless -u NONE -i NONE -l tests/ai-commit-http.lua`
 from the repository root. It opens a loopback socket and exercises real curl,
-the Messages request body and authentication headers without API credentials.
+the Messages and Chat Completions request bodies, authentication headers and
+SSE decoding without API credentials.
 
-Before publishing: complete the consumer migration, choose a license, add CI,
-test real providers and interactive UI, and exercise commit-hook and signing
-failures. No license grant has been selected for this preparation snapshot.
+Hook rejection, signing failures and failures after an earlier successful commit
+are covered with real Git processes. See [release preparation](RELEASING.md)
+for remaining manual checks, [contributing](CONTRIBUTING.md) for development,
+[changelog](CHANGELOG.md) for changes and `:help ai-commitplan` for editor help.
+No license grant has been selected yet; publishing remains a separate decision.

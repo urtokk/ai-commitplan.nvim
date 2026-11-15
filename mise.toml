@@ -1,0 +1,15 @@
+[tools]
+"aqua:neovim/neovim" = "0.11.5"
+stylua = "2.6.0"
+markdownlint-cli2 = "0.24.0"
+node = "24"
+jactionlint = "2.3.0"
+
+[tasks.lint]
+run = ["stylua --check lua plugin tests", "markdownlint-cli2 '**/*.md'", "jactionlint .github/workflows/check.yml", "zsh -n tests/ai-commit.zsh"]
+
+[tasks.test]
+run = ["zsh tests/ai-commit.zsh", "NVIM_AI_COMMIT_TEST=1 NVIM_LOG_FILE=/tmp/ai-commitplan-http.log nvim --headless -u NONE -i NONE -l tests/ai-commit-http.lua"]
+
+[tasks.check]
+depends = ["lint", "test"]

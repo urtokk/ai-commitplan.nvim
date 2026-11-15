@@ -1,23 +1,12 @@
 local M = {}
-local options = {}
-
-function M.setup(opts)
-  opts = opts or {}
-  assert(type(opts) == "table", "AICommit setup expects a table")
-  assert(
-    vim.tbl_contains({ "omlx", "openai_compatible", "anthropic" }, opts.provider or "omlx"),
-    "Unknown AICommit provider"
-  )
-  for _, field in ipairs({ "connect_timeout", "idle_timeout" }) do
-    assert(opts[field] == nil or (type(opts[field]) == "number" and opts[field] > 0), field .. " must be positive")
-  end
-  assert(opts.api_key == nil or type(opts.api_key) == "string" or type(opts.api_key) == "function", "Invalid api_key")
-  assert(
-    opts.endpoint == nil or (type(opts.endpoint) == "string" and opts.endpoint:match("^https?://")),
-    "Expected an HTTP(S) endpoint"
-  )
-  options = vim.deepcopy(opts or {})
-end
+local config_module = require("ai_commitplan.config")
+local provider = require("ai_commitplan.provider")
+M.setup = config_module.setup
+local connection_config = config_module.resolve
+local request = provider.request
+local stream_request = provider.stream_request
+local stream_decoder = provider.stream_decoder
+local curl_timeout_args = provider.curl_timeout_args
 
 local MAX_CONTEXT_BYTES = 50000
 local MAX_FILE_CONTEXT_BYTES = 40000
@@ -32,293 +21,6 @@ local function non_empty_string(value)
   end
   local trimmed = vim.trim(value)
   return trimmed ~= "" and trimmed or nil
-end
-
-local function read_json(path)
-  local file = io.open(path, "r")
-  if not file then
-    return {}
-  end
-  local ok, value = pcall(vim.json.decode, file:read("*a"))
-  file:close()
-  return ok and type(value) == "table" and value or {}
-end
-
-local function omlx_config()
-  local settings = read_json(vim.fs.joinpath(vim.fn.expand("~"), ".omlx", "settings.json"))
-  local server = type(settings.server) == "table" and settings.server or {}
-  local integrations = type(settings.integrations) == "table" and settings.integrations or {}
-  local auth = type(settings.auth) == "table" and settings.auth or {}
-  local host = non_empty_string(server.host) or "127.0.0.1"
-  local port = type(server.port) == "number" and server.port or non_empty_string(server.port) or 8000
-
-  return {
-    endpoint = ("http://%s:%s/v1"):format(host, port),
-    api_key = non_empty_string(vim.env.OMLX_API_KEY) or non_empty_string(auth.api_key),
-    model = non_empty_string(vim.env.OMLX_COMMIT_MODEL) or non_empty_string(integrations.commit_model),
-    connect_timeout = tonumber(vim.env.OMLX_CONNECT_TIMEOUT) or 5,
-    idle_timeout = tonumber(vim.env.OMLX_IDLE_TIMEOUT) or 120,
-  }
-end
-
-local function connection_config()
-  local config = (options.provider == "openai_compatible" or options.provider == "anthropic")
-      and { connect_timeout = 5, idle_timeout = 120 }
-    or omlx_config()
-  config = vim.tbl_extend("force", config, options)
-  if config.provider == "anthropic" then
-    config.endpoint = config.endpoint or "https://api.anthropic.com/v1"
-    config.api_key_env = config.api_key_env or (not config.api_key and "ANTHROPIC_API_KEY" or nil)
-  end
-  if type(config.api_key) == "function" then
-    config.api_key = config.api_key()
-  end
-  if config.api_key_env then
-    config.api_key = vim.env[config.api_key_env]
-  end
-  config.endpoint = (config.endpoint or ""):gsub("/+$", "")
-  assert(
-    not config.api_key or (type(config.api_key) == "string" and not config.api_key:find("[\r\n]")),
-    "Invalid API key"
-  )
-  return config
-end
-
-local function curl_timeout_args(config)
-  local connect_timeout = config.connect_timeout > 0 and config.connect_timeout or 5
-  local idle_timeout = config.idle_timeout > 0 and config.idle_timeout or 120
-  return {
-    "--connect-timeout",
-    tostring(connect_timeout),
-    "--speed-limit",
-    "1",
-    "--speed-time",
-    tostring(idle_timeout),
-  }
-end
-
-local function auth_file(config)
-  local path = vim.fn.tempname()
-  local fd, err = vim.uv.fs_open(path, "wx", 384)
-  if not fd then
-    return nil, err
-  end
-  local prefix = config.provider == "anthropic" and "x-api-key: " or "Authorization: Bearer "
-  local written, write_error = vim.uv.fs_write(fd, prefix .. config.api_key .. "\n", 0)
-  vim.uv.fs_close(fd)
-  if not written then
-    os.remove(path)
-    return nil, write_error
-  end
-  return path
-end
-
-local function request(config, path, body, callback)
-  local command = {
-    "curl",
-    "--fail-with-body",
-    "--silent",
-    "--show-error",
-    "-H",
-    "Content-Type: application/json",
-  }
-  vim.list_extend(command, curl_timeout_args(config))
-  if config.provider == "anthropic" then
-    vim.list_extend(command, { "-H", "anthropic-version: 2023-06-01" })
-  end
-  local header_path
-  if config.api_key then
-    local header_error
-    header_path, header_error = auth_file(config)
-    if not header_path then
-      callback(nil, "Could not create a protected API header file: " .. tostring(header_error))
-      return
-    end
-    vim.list_extend(command, { "--header", "@" .. header_path })
-  end
-  local request_body
-  if body then
-    request_body = vim.json.encode(body)
-    vim.list_extend(command, { "--data-binary", "@-" })
-  end
-  table.insert(command, config.endpoint .. path)
-
-  vim.system(command, { text = true, stdin = request_body }, function(result)
-    if header_path then
-      os.remove(header_path)
-    end
-    vim.schedule(function()
-      if result.code ~= 0 then
-        local ok, response = pcall(vim.json.decode, result.stdout or "")
-        local detail = ok
-            and type(response) == "table"
-            and (non_empty_string(response.detail) or (type(response.error) == "table" and non_empty_string(
-              response.error.message
-            )))
-          or nil
-        local curl_error = vim.trim(result.stderr or "")
-        if curl_error:find("507", 1, true) then
-          local message = "oMLX has insufficient memory for this model or prompt."
-          callback(nil, message .. (detail and " " .. detail or "") .. " Unload another model or select a smaller one.")
-        elseif detail then
-          callback(nil, "AI API: " .. detail)
-        else
-          callback(nil, curl_error ~= "" and curl_error or "AI API request failed")
-        end
-        return
-      end
-
-      local ok, response = pcall(vim.json.decode, result.stdout)
-      callback(ok and response or nil, ok and nil or "AI API returned invalid JSON")
-    end)
-  end)
-end
-
-local function stream_decoder(on_activity)
-  local pending, content, reasoning = "", {}, {}
-  local finish_error
-
-  local function append_delta(delta)
-    local reasoning_delta = type(delta.reasoning_content) == "string" and delta.reasoning_content
-      or type(delta.reasoning) == "string" and delta.reasoning
-      or nil
-    if reasoning_delta and reasoning_delta ~= "" then
-      table.insert(reasoning, reasoning_delta)
-      on_activity("reasoning", reasoning_delta)
-    end
-    if type(delta.content) == "string" and delta.content ~= "" then
-      table.insert(content, delta.content)
-      on_activity("content", delta.content)
-    end
-  end
-
-  local function consume(line)
-    line = line:gsub("\r$", "")
-    if not line:match("^data:") then
-      return
-    end
-    local data = vim.trim(line:sub(6))
-    if data == "" or data == "[DONE]" then
-      return
-    end
-    local ok, chunk = pcall(vim.json.decode, data)
-    local choices = ok and type(chunk) == "table" and type(chunk.choices) == "table" and chunk.choices or {}
-    local choice = type(choices[1]) == "table" and choices[1] or {}
-    if type(choice.finish_reason) == "string" and choice.finish_reason ~= "stop" then
-      finish_error = "Incomplete model response: " .. choice.finish_reason
-    end
-    if type(choice.delta) == "table" then
-      append_delta(choice.delta)
-    end
-  end
-
-  return {
-    feed = function(chunk)
-      pending = pending .. (chunk or "")
-      while true do
-        local newline = pending:find("\n", 1, true)
-        if not newline then
-          break
-        end
-        consume(pending:sub(1, newline - 1))
-        pending = pending:sub(newline + 1)
-      end
-    end,
-    finish = function()
-      if pending ~= "" then
-        consume(pending)
-      end
-      return table.concat(content), table.concat(reasoning), finish_error
-    end,
-  }
-end
-
-local function stream_request(config, path, body, on_activity, callback)
-  if config.provider == "anthropic" then
-    request(config, "/messages", {
-      model = body.model,
-      max_tokens = body.max_tokens,
-      system = body.messages[1].content,
-      messages = { body.messages[2] },
-    }, function(response, err)
-      if not response then
-        callback(nil, err)
-        return
-      end
-      if response.stop_reason ~= "end_turn" then
-        callback(nil, "Anthropic response did not finish normally: " .. tostring(response.stop_reason))
-        return
-      end
-      local parts = {}
-      for _, block in ipairs(type(response.content) == "table" and response.content or {}) do
-        if block.type == "text" and type(block.text) == "string" then
-          table.insert(parts, block.text)
-        end
-      end
-      local content = table.concat(parts)
-      on_activity("content", content)
-      callback(non_empty_string(content), content == "" and "Anthropic returned no text" or nil)
-    end)
-    return
-  end
-  local command = {
-    "curl",
-    "--fail-with-body",
-    "--silent",
-    "--show-error",
-    "--no-buffer",
-    "-H",
-    "Content-Type: application/json",
-  }
-  vim.list_extend(command, curl_timeout_args(config))
-  local header_path
-  if config.api_key then
-    local header_error
-    header_path, header_error = auth_file(config)
-    if not header_path then
-      callback(nil, "Could not create a protected API header file: " .. tostring(header_error))
-      return
-    end
-    vim.list_extend(command, { "--header", "@" .. header_path })
-  end
-  body.stream = true
-  vim.list_extend(command, { "--data-binary", "@-", config.endpoint .. path })
-
-  local decoder = stream_decoder(on_activity)
-  local stderr = {}
-  vim.system(command, {
-    text = true,
-    stdin = vim.json.encode(body),
-    stdout = function(_, data)
-      if data then
-        vim.schedule(function()
-          decoder.feed(data)
-        end)
-      end
-    end,
-    stderr = function(_, data)
-      if data then
-        table.insert(stderr, data)
-      end
-    end,
-  }, function(result)
-    if header_path then
-      os.remove(header_path)
-    end
-    vim.schedule(function()
-      local content, _, finish_error = decoder.finish()
-      if finish_error then
-        callback(nil, finish_error)
-        return
-      end
-      if result.code ~= 0 then
-        local message = vim.trim(table.concat(stderr))
-        callback(nil, message ~= "" and message or "oMLX streaming request failed")
-        return
-      end
-      callback(non_empty_string(content), nil)
-    end)
-  end)
 end
 
 local function show_activity(snapshot)
@@ -600,16 +302,19 @@ local function collect_snapshot()
   if index.code ~= 0 then
     return nil, "Could not read Git index"
   end
+  -- Neovim 0.11 converts NUL-containing Lua strings to Vim Blobs, not Strings.
   local identity = vim.fn.sha256(
-    repo_root
-      .. "\0"
-      .. head.stdout
-      .. "\0"
-      .. index.stdout
-      .. "\0"
-      .. table.concat(files, "\0")
-      .. "\0"
-      .. full_context
+    vim.base64.encode(
+      repo_root
+        .. "\0"
+        .. head.stdout
+        .. "\0"
+        .. index.stdout
+        .. "\0"
+        .. table.concat(files, "\0")
+        .. "\0"
+        .. full_context
+    )
   )
   local truncated = #full_context > MAX_CONTEXT_BYTES
   local context = full_context
@@ -860,7 +565,14 @@ local function execute_plan(commits, snapshot, buffer, on_failure)
       function(result)
         vim.schedule(function()
           if result.code ~= 0 then
-            vim.notify(("Commit %d failed: %s"):format(index, vim.trim(result.stderr)), vim.log.levels.ERROR)
+            local detail = vim.trim(result.stderr or "")
+            if detail == "" then
+              detail = vim.trim(result.stdout or "")
+            end
+            if detail == "" then
+              detail = "Git exited with code " .. result.code .. " (check hooks and signing)"
+            end
+            vim.notify(("Commit %d failed: %s"):format(index, detail), vim.log.levels.ERROR)
             on_failure()
             return
           end
@@ -1452,6 +1164,7 @@ if vim.env.NVIM_AI_COMMIT_TEST == "1" then
     whitespace_only_patch = whitespace_only_patch,
     show_plan = show_plan,
     stage_unit = stage_unit,
+    execute_plan = execute_plan,
     connection_config = connection_config,
     merge_messages = merge_messages,
     stream_request = stream_request,
